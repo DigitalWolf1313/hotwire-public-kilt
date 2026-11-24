@@ -28,7 +28,18 @@ public final class GameMixinCopy {
     private static final Logger LOGGER = LoggerFactory.getLogger(GameMixinCopy.class);
 
     private static final List<String> SHARED = List.of("net.fabricmc.loader.api.", "net.fabricmc.api.",
-            "net.fabricmc.loader.impl.launch.FabricLauncher", "org.apache.logging.log4j.", "org.slf4j.");
+            "net.fabricmc.loader.impl.launch.FabricLauncher", "org.apache.logging.log4j.", "org.slf4j.",
+
+            // Kilt's loader and remapper are initialized by the game, so the copy has to use the game's instances.
+            // Their signatures use Kotlin, fastutil and the renaming tool, so those are shared too.
+            // Otherwise calls across the two fail with loader constraint errors.
+            MixinCopy.EXACT + "xyz.bluspring.kilt.Kilt",
+            "xyz.bluspring.kilt.loader.KiltLoader",
+            "xyz.bluspring.kilt.loader.remap.KiltRemapper",
+            "xyz.bluspring.kilt.loader.remap.KiltEnhancedRemapper",
+            "xyz.bluspring.kilt.loader.asm.EnumExtensionLoader",
+            "kotlin.", "it.unimi.dsi.fastutil.",
+            "net.minecraftforge.fart.", "net.minecraftforge.srgutils.");
 
     private static final List<String> EXTENSIONS = List.of("com.llamalad7.mixinextras.MixinExtrasBootstrap",
             "com.bawnorton.mixinsquared.MixinSquaredBootstrap",

@@ -33,6 +33,7 @@ import java.util.function.BooleanSupplier;
 import java.util.function.Function;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
+import net.fabricmc.loader.api.FabricLoader;
 import org.jspecify.annotations.Nullable;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassWriter;
@@ -54,6 +55,13 @@ public final class MixinCopy implements AutoCloseable {
     }
 
     private static final Logger LOGGER = LoggerFactory.getLogger(MixinCopy.class);
+
+    /**
+     * Must equal {@code CopyMixinService.EXACT}.
+     * That class only exists inside the copy, so this class cannot read it.
+     */
+    public static final String EXACT = "=";
+
     private static final String SERVICE = "mixin.service";
     private static final String BOOTSTRAP = "mixin.bootstrapService";
     private static final String COPY = MixinCopy.class.getPackageName() + ".copy.";
@@ -550,6 +558,13 @@ public final class MixinCopy implements AutoCloseable {
         if (known != null) {
             return known;
         }
+        if (FabricLoader.getInstance().isModLoaded("kilt")) {
+            // Kilt rewrites MixinInfo as it loads, so the jar never names the launcher.
+            launcherNamed = true;
+            LOGGER.info("[Hotwire] Kilt is installed and rewrites Mixin as it loads: Mixin's copy finds the loader's"
+                    + " own classes in the game");
+            return true;
+        }
         byte[] wanted = "net/fabricmc/loader/impl".getBytes(StandardCharsets.UTF_8);
         boolean found = false;
         for (Path jar : jars) {
@@ -594,10 +609,21 @@ public final class MixinCopy implements AutoCloseable {
 
         @Override
         protected Class<?> findClass(String name) throws ClassNotFoundException {
+            if (name.startsWith("org.objectweb.asm.")) {
+                // Kilt's rewritten MixinInfo finds the game's transform method by the game's ClassNode,
+                // so the copy has to use the game's ASM classes.
+                try {
+                    return this.game.loadClass(name);
+                } catch (ClassNotFoundException missing) {
+                    return super.findClass(name);
+                }
+            }
             try {
                 return super.findClass(name);
             } catch (ClassNotFoundException missing) {
-                if (name.startsWith("net.fabricmc.loader.")) {
+                if (name.startsWith("net.fabricmc.loader.") || name.startsWith("net.lenni0451.classtransform.")) {
+                    // Kilt copies methods into MixinInfo, and their parameter types, such as InjectionCallback,
+                    // are only visible to the game.
                     return this.game.loadClass(name);
                 }
                 throw missing;

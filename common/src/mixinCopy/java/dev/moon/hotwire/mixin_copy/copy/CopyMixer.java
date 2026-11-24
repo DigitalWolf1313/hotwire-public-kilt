@@ -6,7 +6,9 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -129,19 +131,30 @@ public final class CopyMixer implements Function<Object[], Object[]> {
             Object extensions = transformer.getExtensions();
             Field generators = extensions.getClass().getDeclaredField("generators");
             generators.setAccessible(true);
-            for (Object generator : (List<?>) generators.get(extensions)) {
+            for (Object generator : new ArrayList<>((List<?>) generators.get(extensions))) {
                 if (!generator.getClass().getName().endsWith(".InnerClassGenerator")) {
                     continue;
                 }
                 Field inner = generator.getClass().getDeclaredField("innerClasses");
                 inner.setAccessible(true);
-                for (Object key : ((Map<?, ?>) inner.get(generator)).keySet()) {
-                    String name = String.valueOf(key).replace('.', '/');
-                    if (isBesideAny(name, mixed.keySet())) {
-                        byte[] bytes = transformer.generateClass(MixinEnvironment.getCurrentEnvironment(),
-                                name.replace('/', '.'));
-                        if (bytes != null) {
-                            made.put(name, bytes);
+                Map<?, ?> registered = (Map<?, ?>) inner.get(generator);
+
+                // Generating an inner class can register another one in this map.
+                // So the keys are copied and walked again until no new ones appear.
+                Set<Object> seen = new HashSet<>();
+                for (List<Object> pending = new ArrayList<>(registered.keySet()); !pending.isEmpty();
+                        pending = newKeys(registered, seen)) {
+                    for (Object key : pending) {
+                        if (!seen.add(key)) {
+                            continue;
+                        }
+                        String name = String.valueOf(key).replace('.', '/');
+                        if (isBesideAny(name, mixed.keySet())) {
+                            byte[] bytes = transformer.generateClass(MixinEnvironment.getCurrentEnvironment(),
+                                    name.replace('/', '.'));
+                            if (bytes != null) {
+                                made.put(name, bytes);
+                            }
                         }
                     }
                 }
@@ -150,6 +163,16 @@ public final class CopyMixer implements Function<Object[], Object[]> {
             throw new IllegalStateException("Mixin's copy would not say which inner classes it generated: " + e, e);
         }
         return made;
+    }
+
+    private static List<Object> newKeys(Map<?, ?> registered, Set<Object> seen) {
+        List<Object> fresh = new ArrayList<>();
+        for (Object key : new ArrayList<Object>(registered.keySet())) {
+            if (!seen.contains(key)) {
+                fresh.add(key);
+            }
+        }
+        return fresh;
     }
 
     private static boolean isBesideAny(String name, Set<String> targets) {

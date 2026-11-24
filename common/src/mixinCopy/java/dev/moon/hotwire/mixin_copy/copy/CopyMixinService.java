@@ -86,6 +86,28 @@ public final class CopyMixinService extends MixinServiceAbstract
         return false;
     }
 
+    /**
+     * Starts a shared entry that matches one class and its nested classes instead of a prefix.
+     * A plain {@code Kilt} prefix would also take {@code KiltMixinPlugin}, which must stay the copy's own.
+     */
+    public static final String EXACT = "=";
+
+    private static boolean isShared(String name) {
+        for (String entry : shared) {
+            if (!entry.startsWith(EXACT)) {
+                if (name.startsWith(entry)) {
+                    return true;
+                }
+                continue;
+            }
+            String exact = entry.substring(EXACT.length());
+            if (name.equals(exact) || (name.startsWith(exact) && name.charAt(exact.length()) == '$')) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private static final Map<String, ProtectionDomain> DOMAINS = new ConcurrentHashMap<>();
 
     static @Nullable ProtectionDomain findDomainOf(String name) {
@@ -109,10 +131,8 @@ public final class CopyMixinService extends MixinServiceAbstract
         @Override
         protected Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
             synchronized (this.getClassLoadingLock(name)) {
-                for (String prefix : shared) {
-                    if (name.startsWith(prefix)) {
-                        return live.loadClass(name);
-                    }
+                if (isShared(name)) {
+                    return live.loadClass(name);
                 }
                 Class<?> loaded = this.findLoadedClass(name);
                 if (loaded != null) {
